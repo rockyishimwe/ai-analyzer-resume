@@ -1,18 +1,40 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
-
-const FileUploader = () => {
+interface FileUploaderProps{
+  onFileSelect?:(file:File | null) =>void;
+}
+const FileUploader = ({onFileSelect}:FileUploaderProps) => {
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    // handle dropped files here
-    console.log('Dropped files:', acceptedFiles)
-  }, [])
+    const selectedFile = acceptedFiles[0] || null;
+    onFileSelect?.(selectedFile);
+  }, [onFileSelect])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop })
+  const { getRootProps, getInputProps, isDragActive,acceptedFiles } = useDropzone({ onDrop,multiple:false,accept:{'application/pdf':['.pdf'] },maxSize:20*1024*1024});
+  const file = acceptedFiles[0] || null;
 
   return (
     <div {...getRootProps()} className='w-full gradient-border'>
       <input {...getInputProps()} />
-      {isDragActive ? 'Drop files here...' : 'Drag and drop files, or click to select'}
+      <div className='space-y-4 cursor-pointer'>
+        <div className='mx-auto w-16 h-16 flex items-center justify-center'>
+          <img src="/icons/info.svg" alt="Upload  " className='size-20' />
+        </div>
+        {file ? (
+          <div>
+            </div>
+        ):(
+          <div>
+            <p className='text-lg text-gray-500'>
+              <span className='font-semibold'>
+                Click to upload
+              </span>or drag and drop
+            </p>
+            <p className='text-lg text-gray-500'>
+              PDF(max 20  MB)
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

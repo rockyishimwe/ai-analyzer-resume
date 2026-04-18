@@ -1,8 +1,9 @@
 import Navbar from '~/components/Navbar';
 import React, { useState } from 'react';
 import FileUploader from '~/components/FileUploader';
-
+import { usePuterStore } from '~/lib/puter';
 const upload = () => {
+  const {auth,isLoading,fs,ai,kv} = usePuterStore();
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [file,setFile] = useState< File |null>(null)
@@ -10,8 +11,26 @@ const upload = () => {
   const handleFileSelect = (file:File| null)=>{
     setFile(file)
   }
+
+  const handleAnalyze = async({companyName,jobTitle,jobDescription,file}:{companyName:String,jobTitle:String,jobDescription:String,file:File})=>{
+    setIsProcessing(true);
+    setStatusText("uploading the file ...");
+    const uploadedFile = await fs.upload([file]);
+  }
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const form = e.currentTarget.closest('form');
+    if(!form) return;
+    const formData = new FormData(form);
+    const companyName = formData.get('company-name') as string;
+    const jobTitle = formData.get('job-title') as string;
+    const jobDescription = formData.get('job-description') as string;
+
+    if(!file) return;
+
+    handleAnalyze({companyName,jobTitle,jobDescription,file});
+
   }
   return (
      <main className="bg-[url('/public/images/bg-main.svg')] bg-cover">

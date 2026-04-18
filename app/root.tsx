@@ -38,8 +38,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        <script src="https://js.puter.com/v2/"></script>
       </head>
-      <script src="https://js.puter.com/v2/"></script>
       <body>
         {children}
         <ScrollRestoration />

@@ -8,7 +8,6 @@ let pdfjsLib: any = null;
 let isLoading = false;
 let loadPromise: Promise<any> | null = null;
 
-// @ts-expect-error
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 async function loadPdfJs(): Promise<any> {

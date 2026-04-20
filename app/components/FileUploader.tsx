@@ -1,103 +1,129 @@
-import React, { useCallback, useState } from "react";
-import { useDropzone } from "react-dropzone";
-import { formatSize } from "../lib/utils";
+import { useCallback, useState } from "react"
+import { FileText, UploadCloud, X } from "lucide-react"
+import { useDropzone } from "react-dropzone"
+import { Button } from "~/components/ui/button"
+import { cn } from "~/lib/utils"
 
-const maxFileSize = 20 * 1024 * 1024; // 20MB
+const formatSize = (bytes: number) => {
+  if (bytes === 0) return "0 Bytes"
+  const k = 1024
+  const sizes = ["Bytes", "KB", "MB", "GB"]
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+}
+
+const maxFileSize = 20 * 1024 * 1024
 
 interface FileUploaderProps {
-  onFileSelect?: (file: File | null) => void;
+  onFileSelect?: (file: File | null) => void
 }
 
 const FileUploader = ({ onFileSelect }: FileUploaderProps) => {
-  const [file, setFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(null)
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      const selectedFile = acceptedFiles[0] || null;
-      setFile(selectedFile);
-      onFileSelect?.(selectedFile);
+      const selectedFile = acceptedFiles[0] || null
+      setFile(selectedFile)
+      onFileSelect?.(selectedFile)
     },
     [onFileSelect]
-  );
+  )
 
   const removeFile = (e: React.MouseEvent) => {
-    e.stopPropagation(); // prevent opening file dialog
-    setFile(null);
-    onFileSelect?.(null);
-  };
+    e.stopPropagation()
+    setFile(null)
+    onFileSelect?.(null)
+  }
 
-  const {
-    getRootProps,
-    getInputProps,
-    isDragActive,
-    fileRejections,
-  } = useDropzone({
-    onDrop,
-    multiple: false,
-    accept: { "application/pdf": [".pdf"] },
-    maxSize: maxFileSize,
-  });
+  const { getRootProps, getInputProps, isDragActive, fileRejections } =
+    useDropzone({
+      onDrop,
+      multiple: false,
+      accept: { "application/pdf": [".pdf"] },
+      maxSize: maxFileSize,
+    })
 
   return (
     <div
       {...getRootProps()}
       role="button"
       tabIndex={0}
-      className={`w-full gradient-border p-6 rounded-xl text-center cursor-pointer transition ${
-        isDragActive ? "bg-blue-50 border-blue-400" : ""
-      }`}
+      aria-label="PDF file upload area. Press Enter or Space to select a file, or drag and drop a PDF file here."
+      aria-describedby="upload-helper"
+      className={cn(
+        "w-full rounded-[30px] border border-dashed p-6 text-left transition duration-300",
+        file
+          ? "border-slate-200 bg-white/92 shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
+          : isDragActive
+            ? "border-slate-950 bg-[#f8fbff] shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
+            : "border-slate-300 bg-white/80 hover:border-slate-500 hover:bg-white/90"
+      )}
     >
-      <input {...getInputProps()} />
+      <input {...getInputProps()} aria-label="PDF file input" />
 
       {file ? (
         <div
-          className="flex items-center justify-between gap-3"
+          className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* File Info */}
-          <div className="flex items-center gap-3">
-            <img src="/images/pdf.png" alt="pdf" className="w-10 h-10" />
+          <div className="flex items-center gap-4">
+            <div className="flex size-14 items-center justify-center rounded-2xl bg-slate-950 text-white">
+              <FileText className="size-6" />
+            </div>
 
-            <div className="text-left">
-              <p className="text-sm font-medium text-gray-700 truncate max-w-xs">
-                {file.name}
-              </p>
-              <p className="text-sm text-gray-500">
-                {formatSize(file.size)}
+            <div>
+              <p className="text-sm font-semibold text-slate-950">{file.name}</p>
+              <p className="mt-1 text-sm text-slate-500">
+                PDF selected · {formatSize(file.size)}
               </p>
             </div>
           </div>
 
-          {/* Remove Button */}
-          <button
-            className="p-2 cursor-pointer hover:bg-gray-100 rounded-full"
-            onClick={removeFile}
-          >
-            <img src="/icons/cross.svg" alt="remove" className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-500">Click to replace</span>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              onClick={removeFile}
+              className="rounded-full border-slate-200 bg-white"
+              aria-label={`Remove ${file.name}`}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <img src="/icons/info.svg" alt="Upload" className="w-12 h-12" />
+        <div className="flex flex-col items-center justify-center gap-4 py-4 text-center">
+          <div className="flex size-16 items-center justify-center rounded-3xl bg-slate-950 text-white">
+            <UploadCloud className="size-7" />
+          </div>
 
-          <p className="text-gray-600">
-            <span className="font-semibold">Click to upload</span> or drag and drag
-          </p>
+          <div className="space-y-2">
+            <p className="text-base font-semibold text-slate-950">
+              Upload a resume PDF
+            </p>
+            <p className="text-sm leading-7 text-slate-500">
+              Drag and drop the file here or click to browse from your device.
+            </p>
+          </div>
 
-          <p className="text-sm text-gray-400">
-            PDF (max {formatSize(maxFileSize)})
+          <p
+            id="upload-helper"
+            className="rounded-full bg-slate-100 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500"
+          >
+            PDF only · max {formatSize(maxFileSize)}
           </p>
         </div>
       )}
 
-      {/* Error handling */}
       {fileRejections.length > 0 && (
-        <p className="text-red-500 text-sm mt-3">
+        <p role="alert" className="mt-4 text-sm text-red-600">
           Invalid file. Only PDF files under {formatSize(maxFileSize)} are allowed.
         </p>
       )}
     </div>
-  );
-};
+  )
+}
 
-export default FileUploader;
+export default FileUploader

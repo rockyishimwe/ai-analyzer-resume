@@ -1,130 +1,320 @@
-import {type FormEvent, useState} from 'react'
-import Navbar from "~/components/Navbar";
-import FileUploader from "~/components/FileUploader";
-import {usePuterStore} from "~/lib/puter";
-import {useNavigate} from "react-router";
-import {convertPdfToImage} from "~/lib/pdf2img";
-import {generateUUID} from "~/lib/utils";
-import {prepareInstructions, AIResponseFormat} from"~/constants";
+import { type FormEvent, useEffect, useRef, useState } from "react"
+import { Gauge, LayoutDashboard, Sparkles } from "lucide-react"
+import { useNavigate } from "react-router"
+import Navbar from "~/components/Navbar"
+import FileUploader from "~/components/FileUploader"
+import { FormInput, FormTextarea } from "~/components/FormComponents"
+import { Alert, AlertDescription } from "~/components/ui/alert"
+import { Button } from "~/components/ui/button"
+import { prepareInstructions, AIResponseFormat } from "~/constants"
+import { useToast } from "~/hooks/useToast"
+import { convertPdfToImage } from "~/lib/pdf2img"
+import { usePuterStore } from "~/lib/puter"
+import { generateUUID } from "~/lib/utils"
+import { uploadResumeSchema, validateFile } from "~/lib/validation"
+
+const uploadHighlights = [
+  {
+    title: "ATS performance",
+    description: "See how likely the resume is to clear automated screening.",
+    icon: Gauge,
+  },
+  {
+    title: "Actionable feedback",
+    description: "Get practical notes you can use on the very next draft.",
+    icon: Sparkles,
+  },
+  {
+    title: "Saved in dashboard",
+    description: "Come back to each review later without losing the context.",
+    icon: LayoutDashboard,
+  },
+]
 
 const Upload = () => {
-    const { auth, isLoading, fs, ai, kv } = usePuterStore();
-    const navigate = useNavigate();
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [statusText, setStatusText] = useState('');
-    const [file, setFile] = useState<File | null>(null);
+  const { auth, isLoading, fs, ai, kv } = usePuterStore()
+  const navigate = useNavigate()
+  const { success, error: showError } = useToast()
 
-    const handleFileSelect = (file: File | null) => {
-        setFile(file)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [statusText, setStatusText] = useState("")
+  const [file, setFile] = useState<File | null>(null)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  const companyNameRef = useRef<HTMLInputElement>(null)
+  const jobTitleRef = useRef<HTMLInputElement>(null)
+  const jobDescriptionRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!isLoading && !auth.isAuthenticated) {
+      navigate("/auth?next=/upload")
+    }
+  }, [auth.isAuthenticated, isLoading, navigate])
+
+  const handleFileSelect = (selectedFile: File | null) => {
+    setFile(selectedFile)
+    setErrors((prev) => ({ ...prev, file: "" }))
+  }
+
+  const handleAnalyze = async ({
+    companyName,
+    jobTitle,
+    jobDescription,
+    file,
+  }: {
+    companyName: string
+    jobTitle: string
+    jobDescription: string
+    file: File
+  }) => {
+    setIsProcessing(true)
+    setStatusText("")
+
+    try {
+      setStatusText("Uploading the file...")
+      const uploadedFile = await fs.upload([file])
+      if (!uploadedFile) {
+        throw new Error("Failed to upload file")
+      }
+
+      setStatusText("Converting to image...")
+      const imageFile = await convertPdfToImage(file)
+      if (!imageFile.file) {
+        throw new Error(imageFile.error || "Failed to convert PDF to image")
+      }
+
+      setStatusText("Uploading the image...")
+      const uploadedImage = await fs.upload([imageFile.file])
+      if (!uploadedImage) {
+        throw new Error("Failed to upload image")
+      }
+
+      setStatusText("Preparing data...")
+      const uuid = generateUUID()
+      const data = {
+        id: uuid,
+        resumePath: uploadedFile.path,
+        imagePath: uploadedImage.path,
+        companyName,
+        jobTitle,
+        jobDescription,
+        feedback: "",
+      }
+      await kv.set(`resume:${uuid}`, JSON.stringify(data))
+
+      setStatusText("Analyzing your resume...")
+      const feedback = await ai.feedback(
+        uploadedFile.path,
+        prepareInstructions({ jobTitle, jobDescription, AIResponseFormat })
+      )
+      if (!feedback) {
+        throw new Error("Failed to analyze resume")
+      }
+
+      const feedbackText =
+        typeof feedback.message.content === "string"
+          ? feedback.message.content
+          : feedback.message.content[0].text
+
+      data.feedback = JSON.parse(feedbackText)
+      await kv.set(`resume:${uuid}`, JSON.stringify(data))
+
+      success("Resume analysis complete! Redirecting...")
+      setTimeout(() => navigate(`/resume/${uuid}`), 1000)
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "An unexpected error occurred"
+      showError(`Error: ${errorMessage}`)
+      setStatusText("")
+      setIsProcessing(false)
+    }
+  }
+
+  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setErrors({})
+
+    const companyName = companyNameRef.current?.value || ""
+    const jobTitle = jobTitleRef.current?.value || ""
+    const jobDescription = jobDescriptionRef.current?.value || ""
+
+    if (!file) {
+      setErrors({ file: "Please select a PDF file" })
+      showError("Please select a PDF file")
+      return
     }
 
-    const handleAnalyze = async ({ companyName, jobTitle, jobDescription, file }: { companyName: string, jobTitle: string, jobDescription: string, file: File  }) => {
-        setIsProcessing(true);
-
-        setStatusText('Uploading the file...');
-        const uploadedFile = await fs.upload([file]);
-        if(!uploadedFile) return setStatusText('Error: Failed to upload file');
-
-        setStatusText('Converting to image...');
-        const imageFile = await convertPdfToImage(file);
-        if(!imageFile.file) {
-            console.error('PDF conversion error:', imageFile.error);
-            return setStatusText(`Error: Failed to convert PDF to image${imageFile.error ? ': ' + imageFile.error : ''}`);
-        }
-
-        setStatusText('Uploading the image...');
-        const uploadedImage = await fs.upload([imageFile.file]);
-        if(!uploadedImage) return setStatusText('Error: Failed to upload image');
-
-        setStatusText('Preparing data...');
-        const uuid = generateUUID();
-        const data = {
-            id: uuid,
-            resumePath: uploadedFile.path,
-            imagePath: uploadedImage.path,
-            companyName, jobTitle, jobDescription,
-            feedback: '',
-        }
-        await kv.set(`resume:${uuid}`, JSON.stringify(data));
-
-        setStatusText('Analyzing...');
-
-        const feedback = await ai.feedback(
-            uploadedFile.path,
-            prepareInstructions({ jobTitle, jobDescription, AIResponseFormat })
-        )
-        if(!feedback) return setStatusText('Error:Failed to analyze resume');
-
-        const feedbackText = typeof feedback.message.content === 'string'
-        ? feedback.message.content:feedback.message.content[0].text;
-
-
-        data.feedback = JSON.parse(feedbackText);
-        await kv.set(`resume:${uuid}`,JSON.stringify(data));
-        setStatusText('Analysis complete!,redirecting ...');
-
-        console.log(data);
-        navigate(`/resume/${uuid}`);
+    const fileValidation = validateFile(file)
+    if (!fileValidation.valid) {
+      setErrors({ file: fileValidation.error || "Invalid file" })
+      showError(fileValidation.error || "Invalid file")
+      return
     }
 
-    const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
-        e.preventDefault();
-        const form = e.currentTarget.closest('form');
-        if(!form) return;
-        const formData = new FormData(form);
+    const validation = uploadResumeSchema.safeParse({
+      companyName,
+      jobTitle,
+      jobDescription,
+    })
 
-        const companyName = formData.get('company-name') as string;
-        const jobTitle = formData.get('job-title') as string;
-        const jobDescription = formData.get('job-description') as string;
+    if (!validation.success) {
+      const newErrors: Record<string, string> = {}
 
-        if(!file) return;
+      validation.error.issues.forEach((issue) => {
+        const path = issue.path[0]
+        if (path === "companyName") newErrors.companyName = issue.message
+        if (path === "jobTitle") newErrors.jobTitle = issue.message
+        if (path === "jobDescription") newErrors.jobDescription = issue.message
+      })
 
-        handleAnalyze({ companyName, jobTitle, jobDescription, file });
+      setErrors(newErrors)
+      showError("Please fix the form errors")
+      return
     }
 
-    return (
-        <main className="bg-[url('/images/bg-main.svg')] bg-cover">
-            <Navbar />
+    void handleAnalyze({ companyName, jobTitle, jobDescription, file })
+  }
 
-            <section className="main-section">
-                <div className="page-heading py-16">
-                    <h1>Smart feedback for your dream job</h1>
-                    {isProcessing ? (
-                        <>
-                            <h2>{statusText}</h2>
-                            <img src="/images/resume-scan.gif" className="w-full" />
-                        </>
-                    ) : (
-                        <h2>Drop your resume for an ATS score and improvement tips</h2>
-                    )}
-                    {!isProcessing && (
-                        <form id="upload-form" onSubmit={handleSubmit} className="flex flex-col gap-4 mt-8">
-                            <div className="form-div">
-                                <label htmlFor="company-name">Company Name</label>
-                                <input type="text" name="company-name" placeholder="Company Name" id="company-name" />
-                            </div>
-                            <div className="form-div">
-                                <label htmlFor="job-title">Job Title</label>
-                                <input type="text" name="job-title" placeholder="Job Title" id="job-title" />
-                            </div>
-                            <div className="form-div">
-                                <label htmlFor="job-description">Job Description</label>
-                                <textarea rows={5} name="job-description" placeholder="Job Description" id="job-description" />
-                            </div>
+  return (
+    <main className="!pt-0 overflow-hidden bg-[#f6f8fc]">
+      <div className="absolute inset-x-0 top-0 -z-10 h-[560px] bg-[radial-gradient(circle_at_top_left,_rgba(255,199,186,0.82),_transparent_36%),radial-gradient(circle_at_top_right,_rgba(155,189,255,0.7),_transparent_32%),linear-gradient(180deg,_#fffdfd_0%,_#f6f8fc_50%,_#f3f6fb_100%)]" />
+      <Navbar />
 
-                            <div className="form-div">
-                                <label htmlFor="uploader">Upload Resume</label>
-                                <FileUploader onFileSelect={handleFileSelect} />
-                            </div>
+      <section className="px-4 pb-20 pt-10 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-6xl gap-8 xl:grid-cols-[0.82fr_1.18fr]">
+          <div className="space-y-6">
+            <div className="rounded-[36px] bg-slate-950 p-8 text-white shadow-[0_28px_80px_rgba(15,23,42,0.18)]">
+              <p className="text-sm font-semibold uppercase tracking-[0.35em] text-white/45">
+                Resume review studio
+              </p>
+              <h1 className="mt-4 !text-5xl !leading-[1.03] !tracking-[-0.05em] !text-white sm:!text-6xl">
+                Upload once. Review deeply.
+              </h1>
+              <p className="mt-5 text-base leading-8 text-slate-300 sm:text-lg">
+                Add the role context, send your resume through the reviewer, and
+                get a cleaner explanation of what helps or hurts the application.
+              </p>
+            </div>
 
-                            <button className="primary-button" type="submit">
-                                Analyze Resume
-                            </button>
-                        </form>
-                    )}
+            <div className="grid gap-4">
+              {uploadHighlights.map(({ title, description, icon: Icon }) => (
+                <div
+                  key={title}
+                  className="rounded-[28px] border border-white/80 bg-white/82 p-6 shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="flex size-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
+                      <Icon className="size-5" />
+                    </div>
+                    <div>
+                      <h2 className="!text-2xl !font-semibold !tracking-[-0.03em] !text-slate-950">
+                        {title}
+                      </h2>
+                      <p className="mt-2 text-sm leading-7 text-slate-600">
+                        {description}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-            </section>
-        </main>
-    )
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[36px] border border-white/80 bg-white/86 p-6 shadow-[0_28px_80px_rgba(15,23,42,0.1)] backdrop-blur lg:p-8">
+            {isProcessing ? (
+              <div className="space-y-6">
+                <p className="text-sm font-semibold uppercase tracking-[0.35em] text-slate-400">
+                  Analysis in progress
+                </p>
+                <h2 className="!text-3xl !font-semibold !tracking-[-0.04em] !text-slate-950 sm:!text-4xl">
+                  We are reviewing your resume now.
+                </h2>
+                <p className="text-base leading-8 text-slate-600">{statusText}</p>
+                <div className="overflow-hidden rounded-[30px] bg-[#f7f8fc] p-4">
+                  <img
+                    src="/images/resume-scan.gif"
+                    alt="Animated resume scanning preview"
+                    className="w-full rounded-[22px]"
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold uppercase tracking-[0.35em] text-slate-400">
+                  New review
+                </p>
+                <h2 className="mt-3 !text-3xl !font-semibold !tracking-[-0.04em] !text-slate-950 sm:!text-4xl">
+                  Give the reviewer enough context to be useful.
+                </h2>
+                <p className="mt-4 text-base leading-8 text-slate-600">
+                  A better brief creates better feedback. Add the company, the job
+                  title, the job description, and the resume PDF you want scored.
+                </p>
+
+                <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-6">
+                  {errors.file && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{errors.file}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <FormInput
+                    ref={companyNameRef}
+                    type="text"
+                    label="Company Name"
+                    placeholder="e.g., Google, Microsoft, etc."
+                    id="company-name"
+                    error={errors.companyName}
+                    helperText="The company you are applying to."
+                    required
+                  />
+
+                  <FormInput
+                    ref={jobTitleRef}
+                    type="text"
+                    label="Job Title"
+                    placeholder="e.g., Senior Frontend Engineer"
+                    id="job-title"
+                    error={errors.jobTitle}
+                    helperText="The role you want the resume aligned to."
+                    required
+                  />
+
+                  <FormTextarea
+                    ref={jobDescriptionRef}
+                    label="Job Description"
+                    placeholder="Paste the full job description here..."
+                    id="job-description"
+                    error={errors.jobDescription}
+                    helperText="Include responsibilities, requirements, and keyword-heavy sections."
+                    rows={6}
+                    required
+                  />
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+                      Resume File
+                      <span className="ml-1 text-red-500">*</span>
+                    </p>
+                    <FileUploader onFileSelect={handleFileSelect} />
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={isProcessing || !file}
+                    size="lg"
+                    className="h-12 w-full rounded-full text-base"
+                  >
+                    Analyze Resume
+                  </Button>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+    </main>
+  )
 }
+
 export default Upload

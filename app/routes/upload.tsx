@@ -176,8 +176,8 @@ const Upload = () => {
   }
 
   return (
-    <main className="!pt-0 overflow-hidden bg-[#f6f8fc]">
-      <div className="absolute inset-x-0 top-0 -z-10 h-[560px] bg-[radial-gradient(circle_at_top_left,_rgba(255,199,186,0.82),_transparent_36%),radial-gradient(circle_at_top_right,_rgba(155,189,255,0.7),_transparent_32%),linear-gradient(180deg,_#fffdfd_0%,_#f6f8fc_50%,_#f3f6fb_100%)]" />
+    <main className="pt-0! overflow-hidden bg-[#f6f8fc]">
+      <div className="absolute inset-x-0 top-0 -z-10 h-140 bg-[radial-gradient(circle_at_top_left,_rgba(255,199,186,0.82),_transparent_36%),radial-gradient(circle_at_top_right,_rgba(155,189,255,0.7),_transparent_32%),linear-gradient(180deg,_#fffdfd_0%,_#f6f8fc_50%,_#f3f6fb_100%)]" />
       <Navbar />
 
       <section className="px-4 pb-20 pt-10 sm:px-6 lg:px-8">

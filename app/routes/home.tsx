@@ -79,13 +79,17 @@ export default function Home() {
   const { auth } = usePuterStore()
 
   const primaryHref = auth.isAuthenticated
-    ? "/dashboard"
-    : "/auth?next=/dashboard"
-  const primaryLabel = auth.isAuthenticated ? "Open Dashboard" : "Start Reviewing"
-  const secondaryHref = auth.isAuthenticated
     ? "/upload"
     : "/auth?next=/upload"
+  const primaryLabel = auth.isAuthenticated
+    ? "Upload Another Resume"
+    : "Get Started"
+  const secondaryHref = auth.isAuthenticated ? "/dashboard" : "#workflow"
   const secondaryLabel = auth.isAuthenticated
+    ? "Open Dashboard"
+    : "See How It Works"
+  const finalCtaHref = auth.isAuthenticated ? "/upload" : "/auth?next=/upload"
+  const finalCtaLabel = auth.isAuthenticated
     ? "Upload Another Resume"
     : "Upload Your First Resume"
 
@@ -126,7 +130,11 @@ export default function Home() {
                 size="lg"
                 className="rounded-full border-slate-200 bg-white/80 px-6"
               >
-                <Link to={secondaryHref}>{secondaryLabel}</Link>
+                {auth.isAuthenticated ? (
+                  <Link to={secondaryHref}>{secondaryLabel}</Link>
+                ) : (
+                  <a href={secondaryHref}>{secondaryLabel}</a>
+                )}
               </Button>
             </div>
 
@@ -322,8 +330,8 @@ export default function Home() {
               size="lg"
               className="rounded-full bg-white px-6 text-slate-950 hover:bg-slate-100"
             >
-              <Link to={secondaryHref}>
-                {secondaryLabel}
+              <Link to={finalCtaHref}>
+                {finalCtaLabel}
                 <ArrowRight className="size-4" />
               </Link>
             </Button>

@@ -8,9 +8,13 @@ import { Alert, AlertDescription } from "~/components/ui/alert"
 import { Button } from "~/components/ui/button"
 import { prepareInstructions, AIResponseFormat } from "~/constants"
 import { useToast } from "~/hooks/useToast"
-import { convertPdfToImage } from "~/lib/pdf2img"
+import { convertPdfToImage, extractTextFromPdf } from "~/lib/pdf2img"
 import { usePuterStore } from "~/lib/puter"
-import { generateUUID } from "~/lib/utils"
+import {
+  createContentSignature,
+  generateUUID,
+  parseAIJsonResponse,
+} from "~/lib/utils"
 import { uploadResumeSchema, validateFile } from "~/lib/validation"
 
 const uploadHighlights = [
@@ -56,6 +60,69 @@ const Upload = () => {
     setErrors((prev) => ({ ...prev, file: "" }))
   }
 
+  const cacheFeedback = async (cacheKey: string, feedback: Feedback) => {
+    try {
+      await kv.set(cacheKey, JSON.stringify(feedback))
+    } catch (cacheError) {
+      console.error("Failed to cache feedback:", cacheError)
+    }
+  }
+
+  const getCachedFeedback = async (cacheKey: string) => {
+    try {
+      const cachedFeedback = await kv.get(cacheKey)
+
+      if (!cachedFeedback) {
+        return null
+      }
+
+      return JSON.parse(cachedFeedback) as Feedback
+    } catch (cacheError) {
+      console.error("Failed to read cached feedback:", cacheError)
+      return null
+    }
+  }
+
+  const persistPreviewInBackground = async ({
+    file,
+    resumeId,
+  }: {
+    file: File
+    resumeId: string
+  }) => {
+    try {
+      const previewImage = await convertPdfToImage(file)
+
+      if (!previewImage.file) {
+        return
+      }
+
+      const uploadedImage = await fs.upload([previewImage.file])
+
+      if (!uploadedImage) {
+        return
+      }
+
+      const storedResume = await kv.get(`resume:${resumeId}`)
+
+      if (!storedResume) {
+        return
+      }
+
+      const parsedResume = JSON.parse(storedResume) as Resume
+
+      await kv.set(
+        `resume:${resumeId}`,
+        JSON.stringify({
+          ...parsedResume,
+          imagePath: uploadedImage.path,
+        })
+      )
+    } catch (previewError) {
+      console.error("Failed to generate resume preview:", previewError)
+    }
+  }
+
   const handleAnalyze = async ({
     companyName,
     jobTitle,
@@ -71,56 +138,85 @@ const Upload = () => {
     setStatusText("")
 
     try {
-      setStatusText("Uploading the file...")
-      const uploadedFile = await fs.upload([file])
+      setStatusText("Uploading your resume...")
+      const [uploadedFile, resumeText] = await Promise.all([
+        fs.upload([file]),
+        extractTextFromPdf(file),
+      ])
+
       if (!uploadedFile) {
         throw new Error("Failed to upload file")
       }
 
-      setStatusText("Converting to image...")
-      const imageFile = await convertPdfToImage(file)
-      if (!imageFile.file) {
-        throw new Error(imageFile.error || "Failed to convert PDF to image")
-      }
-
-      setStatusText("Uploading the image...")
-      const uploadedImage = await fs.upload([imageFile.file])
-      if (!uploadedImage) {
-        throw new Error("Failed to upload image")
-      }
-
-      setStatusText("Preparing data...")
       const uuid = generateUUID()
-      const data = {
-        id: uuid,
-        resumePath: uploadedFile.path,
-        imagePath: uploadedImage.path,
+      const cacheKey = `analysis-cache:${await createContentSignature([
         companyName,
         jobTitle,
         jobDescription,
-        feedback: "",
-      }
-      await kv.set(`resume:${uuid}`, JSON.stringify(data))
+        resumeText || file.name,
+        resumeText ? "" : `${file.size}:${file.lastModified}`,
+      ])}`
 
-      setStatusText("Analyzing your resume...")
-      const feedback = await ai.feedback(
-        uploadedFile.path,
-        prepareInstructions({ jobTitle, jobDescription, AIResponseFormat })
+      setStatusText("Checking for a matching analysis...")
+      const cachedFeedback = await getCachedFeedback(cacheKey)
+      let parsedFeedback: Feedback
+      let usedCachedFeedback = false
+
+      if (cachedFeedback) {
+        parsedFeedback = cachedFeedback
+        usedCachedFeedback = true
+      } else {
+        setStatusText("Analyzing your resume...")
+        const feedback = await ai.feedback({
+          filePath: uploadedFile.path,
+          resumeText,
+          message: prepareInstructions({
+            jobTitle,
+            jobDescription,
+            AIResponseFormat,
+          }),
+        })
+
+        if (!feedback) {
+          throw new Error("Failed to analyze resume")
+        }
+
+        const feedbackText =
+          typeof feedback.message.content === "string"
+            ? feedback.message.content
+            : feedback.message.content[0].text
+
+        parsedFeedback = parseAIJsonResponse<Feedback>(feedbackText)
+        await cacheFeedback(cacheKey, parsedFeedback)
+      }
+
+      const data: {
+        id: string
+        resumePath: string
+        imagePath: string
+        companyName: string
+        jobTitle: string
+        jobDescription: string
+        feedback: Feedback
+      } = {
+        id: uuid,
+        resumePath: uploadedFile.path,
+        imagePath: "",
+        companyName,
+        jobTitle,
+        jobDescription,
+        feedback: parsedFeedback,
+      }
+
+      await kv.set(`resume:${uuid}`, JSON.stringify(data))
+      void persistPreviewInBackground({ file, resumeId: uuid })
+
+      success(
+        usedCachedFeedback
+          ? "Loaded a matching analysis from cache. Redirecting..."
+          : "Resume analysis complete! Redirecting..."
       )
-      if (!feedback) {
-        throw new Error("Failed to analyze resume")
-      }
-
-      const feedbackText =
-        typeof feedback.message.content === "string"
-          ? feedback.message.content
-          : feedback.message.content[0].text
-
-      data.feedback = JSON.parse(feedbackText)
-      await kv.set(`resume:${uuid}`, JSON.stringify(data))
-
-      success("Resume analysis complete! Redirecting...")
-      setTimeout(() => navigate(`/resume/${uuid}`), 1000)
+      setTimeout(() => navigate(`/resume/${uuid}`), 500)
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "An unexpected error occurred"

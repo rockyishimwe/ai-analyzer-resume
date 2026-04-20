@@ -39,6 +39,14 @@ interface PuterChatOptions {
   stream?: boolean;
   max_tokens?: number;
   temperature?: number;
+  reasoning_effort?:
+    | "none"
+    | "minimal"
+    | "low"
+    | "medium"
+    | "high"
+    | "xhigh";
+  text_verbosity?: "low" | "medium" | "high";
   tools?: {
     type: "function";
     function: {

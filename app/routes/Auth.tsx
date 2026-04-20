@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { FileText, LayoutDashboard, Sparkles } from "lucide-react"
 import { useLocation, useNavigate } from "react-router"
 import Navbar from "~/components/Navbar"
@@ -33,10 +33,31 @@ const Auth = () => {
   const location = useLocation()
   const next = new URLSearchParams(location.search).get("next") || "/dashboard"
   const navigate = useNavigate()
+  const [authAction, setAuthAction] = useState<"sign-in" | "sign-out" | null>(
+    null
+  )
 
   useEffect(() => {
-    if (auth.isAuthenticated) navigate(next, { replace: true })
-  }, [auth.isAuthenticated, navigate, next])
+    if (!isLoading && auth.isAuthenticated) {
+      navigate(next, { replace: true })
+    }
+  }, [auth.isAuthenticated, isLoading, navigate, next])
+
+  useEffect(() => {
+    if (!isLoading) {
+      setAuthAction(null)
+    }
+  }, [isLoading])
+
+  const handleSignIn = async () => {
+    setAuthAction("sign-in")
+    await auth.signIn()
+  }
+
+  const handleSignOut = async () => {
+    setAuthAction("sign-out")
+    await auth.signOut()
+  }
 
   return (
     <main className="!pt-0 overflow-hidden bg-[#f6f8fc]">
@@ -94,20 +115,24 @@ const Auth = () => {
             <div className="mt-8">
               {isLoading ? (
                 <Button className="h-14 w-full rounded-full text-base" disabled>
-                  Signing you in...
+                  {authAction === "sign-in"
+                    ? "Opening sign-in..."
+                    : authAction === "sign-out"
+                      ? "Signing you out..."
+                      : "Checking your account..."}
                 </Button>
               ) : auth.isAuthenticated ? (
                 <Button
                   variant="outline"
                   className="h-14 w-full rounded-full border-slate-200 bg-white text-base"
-                  onClick={() => void auth.signOut()}
+                  onClick={() => void handleSignOut()}
                 >
                   Log Out
                 </Button>
               ) : (
                 <Button
                   className="h-14 w-full rounded-full text-base"
-                  onClick={() => void auth.signIn()}
+                  onClick={() => void handleSignIn()}
                 >
                   Log In
                 </Button>

@@ -72,10 +72,11 @@ interface PuterStore {
       testMode?: boolean,
       options?: PuterChatOptions
     ) => Promise<AIResponse | undefined>;
-    feedback: (
-      path: string,
-      message: string
-    ) => Promise<AIResponse | undefined>;
+    feedback: (input: {
+      filePath?: string;
+      resumeText?: string;
+      message: string;
+    }) => Promise<AIResponse | undefined>;
     img2txt: (
       image: string | File | Blob,
       testMode?: boolean
@@ -98,6 +99,53 @@ interface PuterStore {
 
 const getPuter = (): typeof window.puter | null =>
   typeof window !== "undefined" && window.puter ? window.puter : null;
+
+const FAST_FEEDBACK_MODEL = "gpt-5-nano";
+const FAST_FILE_FALLBACK_MODEL = FAST_FEEDBACK_MODEL;
+const LAST_RESORT_FEEDBACK_MODEL = "gpt-5.4-nano";
+const FEEDBACK_OPTIONS: PuterChatOptions = {
+  model: FAST_FEEDBACK_MODEL,
+  reasoning_effort: "none",
+  text_verbosity: "low",
+  temperature: 0.1,
+  max_tokens: 900,
+};
+
+const sendFeedbackRequest = async (
+  puter: typeof window.puter,
+  payload: string | ChatMessage[],
+  model: string
+) =>
+  puter.ai.chat(payload, {
+    ...FEEDBACK_OPTIONS,
+    model,
+  }) as Promise<AIResponse | undefined>;
+
+const buildTextFeedbackPayload = (message: string, resumeText: string): ChatMessage[] => [
+  {
+    role: "user",
+    content: `${message}\nResume text:\n${resumeText}`,
+  },
+];
+
+const buildFileFeedbackPayload = (
+  filePath: string,
+  message: string
+): ChatMessage[] => [
+  {
+    role: "user",
+    content: [
+      {
+        type: "file",
+        puter_path: filePath,
+      },
+      {
+        type: "text",
+        text: message,
+      },
+    ],
+  },
+];
 
 export const usePuterStore = create<PuterStore>((set, get) => {
   const setError = (msg: string) => {
@@ -327,31 +375,66 @@ export const usePuterStore = create<PuterStore>((set, get) => {
     >;
   };
 
-  const feedback = async (path: string, message: string) => {
+  const feedback = async ({
+    filePath,
+    resumeText,
+    message,
+  }: {
+    filePath?: string;
+    resumeText?: string;
+    message: string;
+  }) => {
     const puter = getPuter();
     if (!puter) {
       setError("Puter.js not available");
       return;
     }
 
-    return puter.ai.chat(
-      [
-        {
-          role: "user",
-          content: [
-            {
-              type: "file",
-              puter_path: path,
-            },
-            {
-              type: "text",
-              text: message,
-            },
-          ],
-        },
-      ],
-      { model: "gpt-5.4-nano" }
-    ) as Promise<AIResponse | undefined>;
+    const normalizedResumeText = resumeText?.replace(/\s+/g, " ").trim();
+
+    const attempts: Array<{
+      payload: ChatMessage[];
+      model: string;
+    }> = [];
+
+    if (normalizedResumeText) {
+      attempts.push({
+        payload: buildTextFeedbackPayload(message, normalizedResumeText),
+        model: FAST_FEEDBACK_MODEL,
+      });
+    }
+
+    if (filePath) {
+      const filePayload = buildFileFeedbackPayload(filePath, message);
+      const fallbackModels = Array.from(
+        new Set([FAST_FILE_FALLBACK_MODEL, LAST_RESORT_FEEDBACK_MODEL])
+      );
+
+      for (const model of fallbackModels) {
+        attempts.push({
+          payload: filePayload,
+          model,
+        });
+      }
+    }
+
+    if (attempts.length === 0) {
+      throw new Error("No resume input provided for analysis");
+    }
+
+    let lastError: unknown;
+
+    for (const attempt of attempts) {
+      try {
+        return await sendFeedbackRequest(puter, attempt.payload, attempt.model);
+      } catch (attemptError) {
+        lastError = attemptError;
+      }
+    }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("Failed to analyze resume");
   };
 
   const img2txt = async (image: string | File | Blob, testMode?: boolean) => {
@@ -438,7 +521,11 @@ export const usePuterStore = create<PuterStore>((set, get) => {
         testMode?: boolean,
         options?: PuterChatOptions
       ) => chat(prompt, imageURL, testMode, options),
-      feedback: (path: string, message: string) => feedback(path, message),
+      feedback: (input: {
+        filePath?: string;
+        resumeText?: string;
+        message: string;
+      }) => feedback(input),
       img2txt: (image: string | File | Blob, testMode?: boolean) =>
         img2txt(image, testMode),
     },

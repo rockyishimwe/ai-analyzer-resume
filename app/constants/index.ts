@@ -89,70 +89,42 @@ export const resumes: Resume[] = [
       },
     },
   },
-];
+]
 
-export const AIResponseFormat = `
-      interface Feedback {
-      overallScore: number; //max 100
-      ATS: {
-        score: number; //rate based on ATS suitability
-        tips: {
-          type: "good" | "improve";
-          tip: string; //give 3-4 tips
-        }[];
-      };
-      toneAndStyle: {
-        score: number; //max 100
-        tips: {
-          type: "good" | "improve";
-          tip: string; //make it a short "title" for the actual explanation
-          explanation: string; //explain in detail here
-        }[]; //give 3-4 tips
-      };
-      content: {
-        score: number; //max 100
-        tips: {
-          type: "good" | "improve";
-          tip: string; //make it a short "title" for the actual explanation
-          explanation: string; //explain in detail here
-        }[]; //give 3-4 tips
-      };
-      structure: {
-        score: number; //max 100
-        tips: {
-          type: "good" | "improve";
-          tip: string; //make it a short "title" for the actual explanation
-          explanation: string; //explain in detail here
-        }[]; //give 3-4 tips
-      };
-      skills: {
-        score: number; //max 100
-        tips: {
-          type: "good" | "improve";
-          tip: string; //make it a short "title" for the actual explanation
-          explanation: string; //explain in detail here
-        }[]; //give 3-4 tips
-      };
-    }`;
+const compactText = (value: string, maxLength: number) =>
+  value.replace(/\s+/g, " ").trim().slice(0, maxLength)
+
+export const AIResponseFormat = `{
+  "overallScore": 0,
+  "ATS": { "score": 0, "tips": [{ "type": "good|improve", "tip": "short tip" }] },
+  "toneAndStyle": { "score": 0, "tips": [{ "type": "good|improve", "tip": "short title", "explanation": "one concise sentence" }] },
+  "content": { "score": 0, "tips": [{ "type": "good|improve", "tip": "short title", "explanation": "one concise sentence" }] },
+  "structure": { "score": 0, "tips": [{ "type": "good|improve", "tip": "short title", "explanation": "one concise sentence" }] },
+  "skills": { "score": 0, "tips": [{ "type": "good|improve", "tip": "short title", "explanation": "one concise sentence" }] }
+}`
 
 export const prepareInstructions = ({
   jobTitle,
   jobDescription,
   AIResponseFormat,
 }: {
-  jobTitle: string;
-  jobDescription: string;
-  AIResponseFormat: string;
-}) =>
-  `You are an expert in ATS (Applicant Tracking System) and resume analysis.
-  Please analyze and rate this resume and suggest how to improve it.
-  The rating can be low if the resume is bad.
-  Be thorough and detailed. Don't be afraid to point out any mistakes or areas for improvement.
-  If there is a lot to improve, don't hesitate to give low scores. This is to help the user to improve their resume.
-  If available, use the job description for the job user is applying to to give more detailed feedback.
-  If provided, take the job description into consideration.
-  The job title is: ${jobTitle}
-  The job description is: ${jobDescription}
-  Provide the feedback using the following format: ${AIResponseFormat}
-  Return the analysis as a JSON object, without any other text and without the backticks.
-  Do not include any other text or comments.`;
+  jobTitle: string
+  jobDescription: string
+  AIResponseFormat: string
+}) => {
+  const safeJobTitle = compactText(jobTitle, 80) || "Not provided"
+  const safeJobDescription =
+    compactText(jobDescription, 2200) || "Not provided"
+
+  return [
+    "You are an ATS resume reviewer.",
+    "Score the resume against the target role.",
+    "Return valid JSON only with integer scores from 0 to 100.",
+    "Keep feedback concise and actionable.",
+    "Return up to 2 ATS tips and up to 1 good plus 1 improve tip for each scored category.",
+    "Each explanation must stay to one short sentence.",
+    `Job title: ${safeJobTitle}.`,
+    `Job description: ${safeJobDescription}.`,
+    `JSON: ${AIResponseFormat}`,
+  ].join("\n")
+}

@@ -17,7 +17,7 @@ export const meta = () => [
 ]
 
 const ResumeReview = () => {
-  const { auth, fs, kv } = usePuterStore()
+  const { auth, fs, kv, isLoading } = usePuterStore()
   const { id } = useParams()
   const { error: showError } = useToast()
   const navigate = useNavigate()
@@ -33,12 +33,67 @@ const ResumeReview = () => {
   const [localIsLoading, setLocalIsLoading] = useState(true)
 
   useEffect(() => {
-    if (!auth.isAuthenticated) navigate(`/auth?next=/resume/${id}`)
-  }, [auth.isAuthenticated, id, navigate])
+    if (!isLoading && !auth.isAuthenticated) {
+      navigate(`/auth?next=/resume/${id}`)
+    }
+  }, [auth.isAuthenticated, id, isLoading, navigate])
 
   useEffect(() => {
+    if (isLoading || !auth.isAuthenticated) {
+      return
+    }
+
     let resumeObjectUrl = ""
     let imageObjectUrl = ""
+    let cancelled = false
+
+    const pause = (delayMs: number) =>
+      new Promise((resolve) => setTimeout(resolve, delayMs))
+
+    const loadImagePreview = async (imagePath: string) => {
+      const imageBlob = await fs.read(imagePath)
+
+      if (!imageBlob || cancelled) {
+        return false
+      }
+
+      if (imageObjectUrl) {
+        URL.revokeObjectURL(imageObjectUrl)
+      }
+
+      imageObjectUrl = URL.createObjectURL(imageBlob)
+      setImageUrl(imageObjectUrl)
+
+      return true
+    }
+
+    const pollForPreview = async () => {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await pause(800)
+
+        if (cancelled) {
+          return
+        }
+
+        const latestResume = await kv.get(`resume:${id}`)
+
+        if (!latestResume) {
+          return
+        }
+
+        const latestData = JSON.parse(latestResume) as Resume
+
+        if (!latestData.imagePath) {
+          continue
+        }
+
+        const previewLoaded = await loadImagePreview(latestData.imagePath)
+
+        if (previewLoaded) {
+          return
+        }
+      }
+    }
 
     const loadResume = async () => {
       try {
@@ -53,11 +108,12 @@ const ResumeReview = () => {
           return
         }
 
-        const data = JSON.parse(resume)
+        const data = JSON.parse(resume) as Resume
         setResumeMeta({
           companyName: data.companyName,
           jobTitle: data.jobTitle,
         })
+        setFeedback(data.feedback)
 
         const resumeBlob = await fs.read(data.resumePath)
         if (!resumeBlob) {
@@ -70,32 +126,34 @@ const ResumeReview = () => {
         resumeObjectUrl = URL.createObjectURL(pdfBlob)
         setResumeUrl(resumeObjectUrl)
 
-        const imageBlob = await fs.read(data.imagePath)
-        if (!imageBlob) {
-          setLoadingError("Failed to load resume preview")
-          showError("Failed to load resume preview")
-          return
-        }
+        if (data.imagePath) {
+          const previewLoaded = await loadImagePreview(data.imagePath)
 
-        imageObjectUrl = URL.createObjectURL(imageBlob)
-        setImageUrl(imageObjectUrl)
-        setFeedback(data.feedback)
+          if (!previewLoaded) {
+            void pollForPreview()
+          }
+        } else {
+          void pollForPreview()
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load resume"
         setLoadingError(message)
         showError(message)
       } finally {
-        setLocalIsLoading(false)
+        if (!cancelled) {
+          setLocalIsLoading(false)
+        }
       }
     }
 
     void loadResume()
 
     return () => {
+      cancelled = true
       if (resumeObjectUrl) URL.revokeObjectURL(resumeObjectUrl)
       if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl)
     }
-  }, [fs, id, kv, showError])
+  }, [auth.isAuthenticated, fs, id, isLoading, kv, showError])
 
   return (
     <main className="!pt-0 overflow-hidden bg-[#f6f8fc]">

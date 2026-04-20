@@ -161,6 +161,7 @@ const Upload = () => {
       const cachedFeedback = await getCachedFeedback(cacheKey)
       let parsedFeedback: Feedback
       let usedCachedFeedback = false
+      let completionMessage = ""
 
       if (cachedFeedback) {
         parsedFeedback = cachedFeedback
@@ -185,9 +186,15 @@ const Upload = () => {
           typeof feedback.message.content === "string"
             ? feedback.message.content
             : feedback.message.content[0].text
+        const responseModel = feedback.usage?.[0]?.model
 
         parsedFeedback = parseAIJsonResponse<Feedback>(feedbackText)
         await cacheFeedback(cacheKey, parsedFeedback)
+
+        if (responseModel) {
+          completionMessage = `Analysis completed with ${responseModel}.`
+          setStatusText(completionMessage)
+        }
       }
 
       const data: {
@@ -214,7 +221,9 @@ const Upload = () => {
       success(
         usedCachedFeedback
           ? "Loaded a matching analysis from cache. Redirecting..."
-          : "Resume analysis complete! Redirecting..."
+          : completionMessage
+            ? `${completionMessage} Redirecting...`
+            : "Resume analysis complete! Redirecting..."
       )
       setTimeout(() => navigate(`/resume/${uuid}`), 500)
     } catch (err) {

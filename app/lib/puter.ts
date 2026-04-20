@@ -100,11 +100,18 @@ interface PuterStore {
 const getPuter = (): typeof window.puter | null =>
   typeof window !== "undefined" && window.puter ? window.puter : null;
 
-const FAST_FEEDBACK_MODEL = "gpt-5-nano";
-const FAST_FILE_FALLBACK_MODEL = FAST_FEEDBACK_MODEL;
-const LAST_RESORT_FEEDBACK_MODEL = "gpt-5.4-nano";
+const PRIMARY_TEXT_MODELS = [
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gpt-5-nano",
+];
+const FILE_FALLBACK_MODELS = [
+  "gemini-2.5-flash",
+  "gpt-5-nano",
+  "gpt-5.4-nano",
+];
 const FEEDBACK_OPTIONS: PuterChatOptions = {
-  model: FAST_FEEDBACK_MODEL,
+  model: PRIMARY_TEXT_MODELS[0],
   reasoning_effort: "none",
   text_verbosity: "low",
   temperature: 0.1,
@@ -398,17 +405,19 @@ export const usePuterStore = create<PuterStore>((set, get) => {
     }> = [];
 
     if (normalizedResumeText) {
-      attempts.push({
-        payload: buildTextFeedbackPayload(message, normalizedResumeText),
-        model: FAST_FEEDBACK_MODEL,
-      });
+      const textPayload = buildTextFeedbackPayload(message, normalizedResumeText);
+
+      for (const model of PRIMARY_TEXT_MODELS) {
+        attempts.push({
+          payload: textPayload,
+          model,
+        });
+      }
     }
 
     if (filePath) {
       const filePayload = buildFileFeedbackPayload(filePath, message);
-      const fallbackModels = Array.from(
-        new Set([FAST_FILE_FALLBACK_MODEL, LAST_RESORT_FEEDBACK_MODEL])
-      );
+      const fallbackModels = Array.from(new Set(FILE_FALLBACK_MODELS));
 
       for (const model of fallbackModels) {
         attempts.push({

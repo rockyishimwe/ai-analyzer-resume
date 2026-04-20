@@ -55,7 +55,7 @@ const Summary = ({ feedback }: { feedback: Feedback }) => {
       <div className="h-24 bg-[radial-gradient(circle_at_top_left,_rgba(255,199,186,0.8),_transparent_40%),radial-gradient(circle_at_top_right,_rgba(155,189,255,0.6),_transparent_35%),linear-gradient(180deg,_rgba(255,255,255,0.92),_rgba(255,255,255,0.88))]" />
 
       <CardContent className="relative -mt-10 p-6 lg:p-8">
-        <div className="grid gap-8 xl:grid-cols-[0.9fr_1.1fr] xl:items-center">
+        <div className="space-y-8">
           <div className="space-y-5">
             <div
               className={cn(
@@ -66,14 +66,16 @@ const Summary = ({ feedback }: { feedback: Feedback }) => {
               {tone.label}
             </div>
 
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
-              <ScoreGauge score={feedback.overallScore} />
+            <div className="grid gap-6 xl:grid-cols-[auto_minmax(0,1fr)] xl:items-center">
+              <div className="justify-self-start">
+                <ScoreGauge score={feedback.overallScore} />
+              </div>
 
-              <div className="space-y-3">
+              <div className="min-w-0 space-y-3">
                 <h2 className="!text-3xl !font-semibold !tracking-[-0.04em] !text-slate-950 sm:!text-4xl">
                   Your resume score
                 </h2>
-                <p className="text-sm leading-7 text-slate-600 sm:text-base">
+                <p className="max-w-3xl text-sm leading-7 text-slate-600 sm:text-base">
                   This overview shows how the resume performs across the areas
                   that most affect readability, ATS matching, and recruiter
                   confidence.

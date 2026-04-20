@@ -27,6 +27,10 @@ const ResumeCard = ({
   const [resumeUrl, setResumeUrl] = useState("")
 
   useEffect(() => {
+    if (!imagePath) {
+      return
+    }
+
     let objectUrl = ""
 
     const loadResumePreview = async () => {
@@ -85,6 +89,8 @@ const ResumeCard = ({
                 src={resumeUrl}
                 alt="Resume preview"
                 className="h-[340px] w-full rounded-[20px] object-cover object-top transition duration-300 group-hover:scale-[1.02] max-sm:h-[220px]"
+                decoding="async"
+                loading="lazy"
               />
             ) : (
               <div className="flex h-[340px] items-center justify-center rounded-[20px] bg-white text-sm text-slate-400 max-sm:h-[220px]">

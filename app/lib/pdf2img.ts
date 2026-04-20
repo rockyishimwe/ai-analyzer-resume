@@ -87,7 +87,18 @@ export async function convertPdfToImage(
     }
 
     const page = await pdf.getPage(1)
-    const viewport = page.getViewport({ scale: 2.2 })
+    const baseScale = 1.5
+    const initialViewport = page.getViewport({ scale: baseScale })
+    const maxWidth = 1400
+    const maxHeight = 1800
+    const downscaleRatio = Math.min(
+      1,
+      maxWidth / initialViewport.width,
+      maxHeight / initialViewport.height
+    )
+    const viewport = page.getViewport({
+      scale: baseScale * downscaleRatio,
+    })
 
     const maxDimension = 3200
     if (viewport.width > maxDimension || viewport.height > maxDimension) {
@@ -115,8 +126,8 @@ export async function convertPdfToImage(
         (blob) => {
           if (blob) {
             const originalName = file.name.replace(/\.pdf$/i, "")
-            const imageFile = new File([blob], `${originalName}.png`, {
-              type: "image/png",
+            const imageFile = new File([blob], `${originalName}.jpg`, {
+              type: "image/jpeg",
             })
 
             resolve({
@@ -131,8 +142,8 @@ export async function convertPdfToImage(
             })
           }
         },
-        "image/png",
-        0.92
+        "image/jpeg",
+        0.82
       )
     })
   } catch (err) {

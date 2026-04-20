@@ -68,3 +68,9 @@ export async function createContentSignature(parts: string[]): Promise<string> {
     byte.toString(16).padStart(2, "0")
   ).join("")
 }
+
+export const getLocalResumePdfKey = (resumeId: string) =>
+  `resume-local-pdf:${resumeId}`
+
+export const getLocalResumePreviewKey = (resumeId: string) =>
+  `resume-local-preview:${resumeId}`

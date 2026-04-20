@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "~/components/ui/alert"
 import { Button } from "~/components/ui/button"
 import { useToast } from "~/hooks/useToast"
 import { usePuterStore } from "~/lib/puter"
+import { getLocalResumePdfKey, getLocalResumePreviewKey } from "~/lib/utils"
 
 export const meta = () => [
   { title: "Resumind | Review" },
@@ -29,7 +30,8 @@ const ResumeReview = () => {
     companyName?: string
     jobTitle?: string
   } | null>(null)
-  const [loadingError, setLoadingError] = useState("")
+  const [contentError, setContentError] = useState("")
+  const [previewError, setPreviewError] = useState("")
   const [localIsLoading, setLocalIsLoading] = useState(true)
 
   useEffect(() => {
@@ -45,10 +47,60 @@ const ResumeReview = () => {
 
     let resumeObjectUrl = ""
     let imageObjectUrl = ""
+    let localResumeUrl = ""
+    let localImageUrl = ""
     let cancelled = false
+    const localResumePdfKey = id ? getLocalResumePdfKey(id) : ""
+    const localResumePreviewKey = id ? getLocalResumePreviewKey(id) : ""
 
     const pause = (delayMs: number) =>
       new Promise((resolve) => setTimeout(resolve, delayMs))
+
+    const clearLocalResumeUrl = () => {
+      if (!localResumeUrl) {
+        return
+      }
+
+      if (localResumePdfKey) {
+        sessionStorage.removeItem(localResumePdfKey)
+      }
+
+      URL.revokeObjectURL(localResumeUrl)
+      localResumeUrl = ""
+    }
+
+    const clearLocalPreviewUrl = () => {
+      if (!localImageUrl) {
+        return
+      }
+
+      if (localResumePreviewKey) {
+        sessionStorage.removeItem(localResumePreviewKey)
+      }
+
+      URL.revokeObjectURL(localImageUrl)
+      localImageUrl = ""
+    }
+
+    const applyLocalAssets = () => {
+      if (localResumePdfKey) {
+        const storedResumeUrl = sessionStorage.getItem(localResumePdfKey)
+
+        if (storedResumeUrl) {
+          localResumeUrl = storedResumeUrl
+          setResumeUrl((currentUrl) => currentUrl || storedResumeUrl)
+        }
+      }
+
+      if (localResumePreviewKey) {
+        const storedPreviewUrl = sessionStorage.getItem(localResumePreviewKey)
+
+        if (storedPreviewUrl) {
+          localImageUrl = storedPreviewUrl
+          setImageUrl((currentUrl) => currentUrl || storedPreviewUrl)
+        }
+      }
+    }
 
     const loadImagePreview = async (imagePath: string) => {
       const imageBlob = await fs.read(imagePath)
@@ -63,6 +115,7 @@ const ResumeReview = () => {
 
       imageObjectUrl = URL.createObjectURL(imageBlob)
       setImageUrl(imageObjectUrl)
+      clearLocalPreviewUrl()
 
       return true
     }
@@ -73,6 +126,16 @@ const ResumeReview = () => {
 
         if (cancelled) {
           return
+        }
+
+        if (localResumePreviewKey) {
+          const storedPreviewUrl = sessionStorage.getItem(localResumePreviewKey)
+
+          if (storedPreviewUrl) {
+            localImageUrl = storedPreviewUrl
+            setImageUrl((currentUrl) => currentUrl || storedPreviewUrl)
+            return
+          }
         }
 
         const latestResume = await kv.get(`resume:${id}`)
@@ -98,12 +161,14 @@ const ResumeReview = () => {
     const loadResume = async () => {
       try {
         setLocalIsLoading(true)
-        setLoadingError("")
+        setContentError("")
+        setPreviewError("")
+        applyLocalAssets()
 
         const resume = await kv.get(`resume:${id}`)
 
         if (!resume) {
-          setLoadingError("Resume not found")
+          setContentError("Resume not found")
           showError("Resume not found")
           return
         }
@@ -114,17 +179,20 @@ const ResumeReview = () => {
           jobTitle: data.jobTitle,
         })
         setFeedback(data.feedback)
+        setLocalIsLoading(false)
 
         const resumeBlob = await fs.read(data.resumePath)
         if (!resumeBlob) {
-          setLoadingError("Failed to load resume file")
-          showError("Failed to load resume file")
+          if (!localResumeUrl) {
+            setPreviewError("The PDF is still syncing. The analysis is ready below.")
+          }
           return
         }
 
         const pdfBlob = new Blob([resumeBlob], { type: "application/pdf" })
         resumeObjectUrl = URL.createObjectURL(pdfBlob)
         setResumeUrl(resumeObjectUrl)
+        clearLocalResumeUrl()
 
         if (data.imagePath) {
           const previewLoaded = await loadImagePreview(data.imagePath)
@@ -137,7 +205,7 @@ const ResumeReview = () => {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to load resume"
-        setLoadingError(message)
+        setContentError(message)
         showError(message)
       } finally {
         if (!cancelled) {
@@ -150,6 +218,8 @@ const ResumeReview = () => {
 
     return () => {
       cancelled = true
+      clearLocalResumeUrl()
+      clearLocalPreviewUrl()
       if (resumeObjectUrl) URL.revokeObjectURL(resumeObjectUrl)
       if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl)
     }
@@ -201,17 +271,20 @@ const ResumeReview = () => {
               )}
             </div>
 
-            {loadingError ? (
-              <Alert variant="destructive" className="m-1">
+            {previewError && (
+              <Alert variant="destructive" className="mb-4">
                 <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>{loadingError}</AlertDescription>
+                <AlertDescription>{previewError}</AlertDescription>
               </Alert>
-            ) : imageUrl ? (
+            )}
+
+            {imageUrl ? (
               <div className="overflow-hidden rounded-[28px] bg-[#f7f8fc] p-4">
                 <img
                   src={imageUrl}
                   alt="Resume preview"
                   className="w-full rounded-[22px] object-contain shadow-[0_18px_45px_rgba(15,23,42,0.08)]"
+                  decoding="async"
                   title="resume"
                 />
               </div>
@@ -239,10 +312,10 @@ const ResumeReview = () => {
               </p>
             </div>
 
-            {loadingError ? (
+            {contentError ? (
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>{loadingError}</AlertDescription>
+                <AlertDescription>{contentError}</AlertDescription>
               </Alert>
             ) : feedback ? (
               <div className="space-y-6">

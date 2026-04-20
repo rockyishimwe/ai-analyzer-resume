@@ -8,11 +8,17 @@ import { Alert, AlertDescription } from "~/components/ui/alert"
 import { Button } from "~/components/ui/button"
 import { prepareInstructions, AIResponseFormat } from "~/constants"
 import { useToast } from "~/hooks/useToast"
-import { convertPdfToImage, extractTextFromPdf } from "~/lib/pdf2img"
+import {
+  convertPdfToImage,
+  extractTextFromPdf,
+  type PdfConversionResult,
+} from "~/lib/pdf2img"
 import { usePuterStore } from "~/lib/puter"
 import {
   createContentSignature,
   generateUUID,
+  getLocalResumePdfKey,
+  getLocalResumePreviewKey,
   parseAIJsonResponse,
 } from "~/lib/utils"
 import { uploadResumeSchema, validateFile } from "~/lib/validation"
@@ -84,18 +90,23 @@ const Upload = () => {
   }
 
   const persistPreviewInBackground = async ({
-    file,
+    previewPromise,
     resumeId,
   }: {
-    file: File
+    previewPromise: Promise<PdfConversionResult>
     resumeId: string
   }) => {
     try {
-      const previewImage = await convertPdfToImage(file)
+      const previewImage = await previewPromise
 
       if (!previewImage.file) {
         return
       }
+
+      sessionStorage.setItem(
+        getLocalResumePreviewKey(resumeId),
+        previewImage.imageUrl
+      )
 
       const uploadedImage = await fs.upload([previewImage.file])
 
@@ -149,6 +160,11 @@ const Upload = () => {
       }
 
       const uuid = generateUUID()
+      const localResumeUrl = URL.createObjectURL(file)
+      const previewPromise = convertPdfToImage(file)
+
+      sessionStorage.setItem(getLocalResumePdfKey(uuid), localResumeUrl)
+
       const cacheKey = `analysis-cache:${await createContentSignature([
         companyName,
         jobTitle,
@@ -216,7 +232,7 @@ const Upload = () => {
       }
 
       await kv.set(`resume:${uuid}`, JSON.stringify(data))
-      void persistPreviewInBackground({ file, resumeId: uuid })
+      void persistPreviewInBackground({ previewPromise, resumeId: uuid })
 
       success(
         usedCachedFeedback
@@ -225,7 +241,7 @@ const Upload = () => {
             ? `${completionMessage} Redirecting...`
             : "Resume analysis complete! Redirecting..."
       )
-      setTimeout(() => navigate(`/resume/${uuid}`), 500)
+      navigate(`/resume/${uuid}`)
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "An unexpected error occurred"
